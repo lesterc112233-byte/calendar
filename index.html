@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calendar</title>
+<!-- Telegram Mini App for the Calendar desktop app. Reminders arrive in the link (?d=…); see CalendarApp/Services/MiniApp.cs. -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
+    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
+    --text: var(--tg-theme-text-color, #111111);
+    --hint: var(--tg-theme-hint-color, #8a8a8e);
+    --accent: var(--tg-theme-button-color, #2481cc);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --link: var(--tg-theme-link-color, #2481cc);
+    --line: var(--tg-theme-section-separator-color, rgba(128, 128, 128, 0.2));
+    --danger: var(--tg-theme-destructive-text-color, #e53935);
+    --soft: rgba(128, 128, 128, 0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.tg) { --bg: #0f0f12; --card: #1c1c21; --text: #f2f2f5; --hint: #8d8d94; --line: rgba(255,255,255,.08); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    padding: 12px 12px calc(24px + env(safe-area-inset-bottom));
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .card { background: var(--card); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+  .hint { color: var(--hint); font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .grow { flex: 1; min-width: 0; }
+
+  /* Month */
+  .month-head { display: flex; align-items: center; margin-bottom: 8px; }
+  .month-head h1 { font-size: 18px; margin: 0; flex: 1; }
+  .nav { width: 36px; height: 36px; border-radius: 50%; font-size: 20px; color: var(--link); }
+  .nav:active, .chip:active { background: var(--soft); }
+  .chip { color: var(--link); padding: 6px 10px; border-radius: 16px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
+  .dow { color: var(--hint); font-size: 12px; padding: 4px 0 6px; }
+  .day { height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 3px; }
+  .num { width: 30px; height: 30px; line-height: 30px; border-radius: 50%; font-size: 15px; }
+  .day.other .num { color: var(--hint); opacity: .6; }
+  .day.today .num { color: var(--accent); font-weight: 700; }
+  .day.sel .num { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .dots { display: flex; gap: 3px; height: 6px; margin-top: 3px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; }
+
+  /* Tabs */
+  .tabs { display: flex; background: var(--soft); border-radius: 10px; padding: 2px; margin-bottom: 12px; }
+  .tab { flex: 1; padding: 7px 0; border-radius: 8px; font-size: 14px; color: var(--hint); }
+  .tab.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+
+  /* List */
+  .list-head { margin: 2px 4px 8px; }
+  .list-head h2 { font-size: 16px; margin: 0; }
+  .day-title { font-size: 13px; font-weight: 600; color: var(--hint); text-transform: uppercase; letter-spacing: .02em; margin: 14px 4px 6px; }
+  .day-title:first-child { margin-top: 2px; }
+  .item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 4px; border-top: 1px solid var(--line); }
+  .item:first-child, .day-title + .item { border-top: 0; }
+  .bar { width: 4px; align-self: stretch; border-radius: 2px; flex: none; }
+  .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--hint); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .done .title { text-decoration: line-through; opacity: .55; }
+  .done .meta { opacity: .55; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; flex: none; }
+  .badge.high { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+  .badge.wait { color: var(--hint); background: var(--soft); }
+  .total { margin: 10px 4px 0; font-weight: 600; }
+  .empty { text-align: center; padding: 22px 8px; color: var(--hint); }
+  .empty b { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
+  .foot { text-align: center; margin-top: 4px; }
+
+  /* Sheet */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; max-height: 85vh; overflow: auto;
+    background: var(--card); border-radius: 16px 16px 0 0;
+    padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+    transform: translateY(100%); transition: transform .25s cubic-bezier(.2,.8,.2,1);
+  }
+  .sheet.open { transform: none; }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 12px; }
+  .sheet h3 { margin: 0 0 4px; font-size: 18px; }
+  .notes { white-space: pre-wrap; background: var(--soft); border-radius: 10px; padding: 8px 10px; margin: 10px 0; font-size: 14px; }
+  .facts { margin: 10px 0 14px; display: grid; gap: 6px; font-size: 14px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btn { background: var(--soft); border-radius: 10px; padding: 11px 8px; font-weight: 600; text-align: center; }
+  .btn:active { opacity: .7; }
+  .btn.primary { background: var(--accent); color: var(--accent-text); }
+  .btn.danger { color: var(--danger); }
+  .btn.wide { grid-column: 1 / -1; }
+  .btn[disabled] { opacity: .4; }
+  .snooze { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; grid-column: 1 / -1; }
+  .sent { margin-top: 12px; text-align: center; }
+
+  /* Form */
+  label.f { display: block; margin-bottom: 12px; }
+  label.f > span { display: block; font-size: 13px; color: var(--hint); margin: 0 4px 4px; }
+  input, select, textarea {
+    width: 100%; font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  textarea { min-height: 70px; resize: vertical; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 12px; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; padding: 9px 0; border-radius: 10px; background: var(--soft); font-size: 14px; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .colors { display: flex; gap: 10px; flex-wrap: wrap; padding: 2px 4px; }
+  .colors button { width: 28px; height: 28px; border-radius: 50%; }
+  .colors button.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
+  .error { color: var(--danger); font-size: 13px; margin: -6px 4px 10px; display: none; }
+  .local-submit { display: none; width: 100%; }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+    background: rgba(30,30,30,.92); color: #fff; padding: 10px 14px; border-radius: 12px; font-size: 14px;
+    opacity: 0; transition: .2s; pointer-events: none; max-width: 90%; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+const tg = window.Telegram && window.Telegram.WebApp;
+const inTelegram = !!(tg && tg.initData !== undefined && tg.platform !== "unknown");
+if (inTelegram) document.documentElement.classList.add("tg");
+
+// ---------- Shared with the desktop app ----------
+const REPEAT = ["Never", "Every day", "Every weekday", "Every week", "Every month", "Every year"];
+const PALETTE = ["0F6CBD", "107C10", "D13438", "F7630C", "EAA300", "8764B8", "E3008C", "038387", "7A7574"];
+const PALETTE_NAMES = ["Blue", "Green", "Red", "Orange", "Yellow", "Purple", "Pink", "Teal", "Gray"];
+const OVERDUE_REPEAT_DAYS = 60;
+const UPCOMING_DAYS = 30;
+
+const params = new URLSearchParams(location.search);
+const mode = params.get("mode");
+const $ = (sel, root = document) => root.querySelector(sel);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---------- Dates ----------
+const pad = n => String(n).padStart(2, "0");
+const parseStamp = s => new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8), +(s.slice(8, 10) || 0), +(s.slice(10, 12) || 0), +(s.slice(12, 14) || 0));
+const dayKey = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+const stamp = d => dayKey(d) + pad(d.getHours()) + pad(d.getMinutes());
+const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, d.getHours(), d.getMinutes());
+const sameDay = (a, b) => dayKey(a) === dayKey(b);
+const daysBetween = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 864e5);
+// Like .NET AddMonths: Jan 31 + 1 month = Feb 28.
+function addMonths(d, n) {
+  const m = d.getMonth() + n, y = d.getFullYear() + Math.floor(m / 12), mm = ((m % 12) + 12) % 12;
+  const last = new Date(y, mm + 1, 0).getDate();
+  return new Date(y, mm, Math.min(d.getDate(), last), d.getHours(), d.getMinutes());
+}
+const fmtTime = d => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const fmtShort = d => d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+const fmtLong = d => d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+function friendly(d, today) {
+  const n = daysBetween(today, d);
+  return n === 0 ? "Today" : n === 1 ? "Tomorrow" : n === -1 ? "Yesterday" : fmtShort(d);
+}
+
+// ---------- Money ----------
+function money(amount, currency) {
+  if (amount == null) return null;
+  const n = amount % 1 === 0
+    ? amount.toLocaleString("en-US", { maximumFractionDigits: 0 })
+    : amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return !currency ? n : currency.length === 1 ? currency + n : `${n} ${currency}`;
+}
+function total(reminders) {
+  const sums = new Map();
+  for (const r of reminders) if (r.m != null) sums.set(r.k || "", (sums.get(r.k || "") || 0) + r.m);
+  return sums.size ? [...sums].sort((a, b) => b[1] - a[1]).map(([k, v]) => money(Math.round(v * 100) / 100, k)).join(" + ") : null;
+}
+
+// ---------- Snapshot ----------
+function loadSnapshot() {
+  const d = params.get("d");
+  if (!d) return null;
+  try {
+    let s = d.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    const bin = atob(s), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const data = JSON.parse(fflate.strFromU8(fflate.inflateSync(bytes)));
+    for (const r of data.r) {
+      r.start = parseStamp(r.s);
+      r.created = parseStamp(r.cr);
+      r.until = r.u ? parseStamp(r.u) : null;
+      r.rp = r.rp || 0;
+      r.p = r.p ?? 1;
+      r.doneDays = new Set(r.dd || []);
+    }
+    data.syncedAt = parseStamp(data.at);
+    return data;
+  } catch (e) {
+    console.error(e);
+    return { broken: true };
+  }
+}
+
+// ---------- Changes sent from here but not yet in the snapshot ----------
+// The PC applies them, then puts a newer snapshot on the menu button.
+const PENDING_KEY = "calendar.pending";
+function loadPending(snap) {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); } catch {}
+  const cutoff = Math.max(snap && snap.syncedAt ? snap.syncedAt.getTime() : 0, Date.now() - 2 * 864e5);
+  return list.filter(p => {
+    if (p.at <= cutoff) return false;
+    // Already in the snapshot (the PC's clock may be a little behind the phone's).
+    const r = snap && snap.r && snap.r.find(x => x.i === p.id);
+    if (p.kind === "x") return !!r;
+    if ((p.kind === "d" || p.kind === "u") && r) return rawDone(r, parseStamp(p.key.split("_")[1])) !== (p.kind === "d");
+    return true;
+  });
+}
+function savePending() {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch {}
+}
+
+// ---------- Occurrences (same rules as Reminder.Occurrences in the app) ----------
+const firstOf = r => r.a ? startOfDay(r.start) : r.start;
+const alertBase = (r, occ) => r.a ? new Date(occ.getFullYear(), occ.getMonth(), occ.getDate(), snapshot.h || 9) : occ;
+function nth(r, first, n) {
+  switch (r.rp) {
+    case 1: return addDays(first, n);
+    case 3: return addDays(first, 7 * n);
+    case 4: return addMonths(first, n);
+    case 5: return addMonths(first, 12 * n);
+  }
+}
+/** Occurrence start times in [from, to). */
+function occurrences(r, from, to) {
+  const first = firstOf(r), out = [];
+  if (r.until) { const end = addDays(startOfDay(r.until), 1); if (end < to) to = end; }
+  if (to <= first || to <= from) return out;
+  if (!r.rp) { if (first >= from) out.push(first); return out; }
+  if (r.rp === 2) {
+    for (let day = startOfDay(from > first ? from : first); ; day = addDays(day, 1)) {
+      const occ = new Date(day.getFullYear(), day.getMonth(), day.getDate(), first.getHours(), first.getMinutes());
+      if (occ >= to) break;
+      if (occ >= from && occ >= first && day.getDay() !== 0 && day.getDay() !== 6) out.push(occ);
+    }
+    return out;
+  }
+  let n = 0;
+  if (from > first) {
+    const days = (from - first) / 864e5;
+    n = r.rp === 1 ? Math.floor(days) : r.rp === 3 ? Math.floor(days / 7)
+      : r.rp === 4 ? (from.getFullYear() - first.getFullYear()) * 12 + from.getMonth() - first.getMonth()
+      : from.getFullYear() - first.getFullYear();
+    n = Math.max(0, n - 1);
+  }
+  for (; ; n++) {
+    const occ = nth(r, first, n);
+    if (occ >= to) break;
+    if (occ >= from) out.push(occ);
+  }
+  return out;
+}
+function isDone(r, occ) {
+  const key = `${r.i}_${stamp(occ)}`;
+  for (let i = pending.length - 1; i >= 0; i--) {
+    const p = pending[i];
+    if (p.key === key && (p.kind === "d" || p.kind === "u")) return p.kind === "d";
+  }
+  return rawDone(r, occ);
+}
+function rawDone(r, occ) { return r.rp ? r.doneDays.has(dayKey(occ)) : !!r.d; }
+const isDeleted = r => pending.some(p => p.kind === "x" && p.id === r.i);
+const reminders = () => (snapshot && snapshot.r ? snapshot.r.filter(r => !isDeleted(r)) : []);
+function between(from, to) {
+  const list = [];
+  for (const r of reminders()) for (const t of occurrences(r, from, to)) list.push({ r, t });
+  return list.sort((a, b) => startOfDay(a.t) - startOfDay(b.t) || (b.r.a ? 1 : 0) - (a.r.a ? 1 : 0) || a.t - b.t || b.r.p - a.r.p);
+}
+function overdue(now) {
+  const today = startOfDay(now), list = [];
+  const passed = o => !isDone(o.r, o.t) && (o.r.a ? o.t < today : o.t < now);
+  for (const r of reminders()) {
+    if (!r.rp) { const o = { r, t: firstOf(r) }; if (passed(o)) list.push(o); continue; }
+    const from = new Date(Math.max(addDays(today, -OVERDUE_REPEAT_DAYS), startOfDay(r.created)));
+    for (const t of occurrences(r, from, now))
+      if (alertBase(r, t) > r.created && passed({ r, t })) list.push({ r, t });
+  }
+  return list.sort((a, b) => b.t - a.t);
+}
+
+// ---------- State ----------
+const snapshot = mode === "add" ? null : loadSnapshot();
+let pending = loadPending(snapshot);
+const now = new Date();
+const state = { tab: "day", selected: startOfDay(now), month: new Date(now.getFullYear(), now.getMonth(), 1) };
+
+// ---------- Rendering ----------
+function render() {
+  if (mode === "add") return renderForm();
+  const app = $("#app");
+  if (!snapshot || snapshot.broken) {
+    app.innerHTML = `<div class="card empty"><b>${snapshot ? "Couldn't read your reminders" : "No reminders here yet"}</b>
+      Open this from the <b style="display:inline">📅 Calendar</b> button in the chat with your Calendar bot.</div>`;
+    return;
+  }
+  const today = startOfDay(new Date());
+  const od = overdue(new Date());
+  app.innerHTML = `
+    <div class="card">${monthHtml(today)}</div>
+    <div class="tabs" role="tablist">
+      ${tabHtml("day", "Day")}${tabHtml("upcoming", "Upcoming")}${tabHtml("overdue", od.length ? `Overdue (${od.length})` : "Overdue")}
+    </div>
+    <div class="card">${listHtml(today, od)}</div>
+    <div class="hint foot">Synced from your PC ${esc(friendly(snapshot.syncedAt, today).toLowerCase())} at ${esc(fmtTime(snapshot.syncedAt))}
+      ${pending.length ? ` · ${pending.length} change${pending.length > 1 ? "s" : ""} waiting for it` : ""}<br>
+      Add reminders with <b>➕ New reminder</b> under the message box.</div>`;
+
+  app.querySelectorAll("[data-day]").forEach(el => el.onclick = () => {
+    state.selected = parseStamp(el.dataset.day); state.tab = "day";
+    if (state.selected.getMonth() !== state.month.getMonth()) state.month = new Date(state.selected.getFullYear(), state.selected.getMonth(), 1);
+    haptic("selection"); render();
+  });
+  app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => { state.tab = el.dataset.tab; haptic("selection"); render(); });
+  app.querySelectorAll("[data-open]").forEach(el => el.onclick = () => {
+    const [id, t] = el.dataset.open.split("_");
+    openSheet(snapshot.r.find(r => r.i === id), parseStamp(t));
+  });
+  $("#prev").onclick = () => { state.month = addMonths(state.month, -1); render(); };
+  $("#next").onclick = () => { state.month = addMonths(state.month, 1); render(); };
+  $("#today").onclick = () => { state.selected = today; state.month = new Date(today.getFullYear(), today.getMonth(), 1); state.tab = "day"; render(); };
+}
+
+function monthHtml(today) {
+  const first = state.month, start = addDays(first, -first.getDay());
+  const end = addDays(start, 42);
+  const colors = new Map();
+  for (const o of between(start, end)) {
+    if (isDone(o.r, o.t)) continue;
+    const k = dayKey(o.t), set = colors.get(k) || new Set();
+    set.add(o.r.c); colors.set(k, set);
+  }
+  const dows = [...Array(7)].map((_, i) => `<div class="dow">${esc(addDays(start, i).toLocaleDateString([], { weekday: "narrow" }))}</div>`).join("");
+  let cells = "";
+  for (let i = 0; i < 42; i++) {
+    const d = addDays(start, i), k = dayKey(d);
+    const cls = ["day", d.getMonth() !== first.getMonth() && "other", sameDay(d, today) && "today", state.tab === "day" && sameDay(d, state.selected) && "sel"].filter(Boolean).join(" ");
+    const dots = [...(colors.get(k) || [])].slice(0, 3).map(c => `<i class="dot" style="background:#${esc(c)}"></i>`).join("");
+    cells += `<button class="${cls}" data-day="${k}0000" aria-label="${esc(fmtLong(d))}"><span class="num">${d.getDate()}</span><span class="dots">${dots}</span></button>`;
+  }
+  return `<div class="month-head">
+      <h1>${esc(first.toLocaleDateString([], { month: "long", year: "numeric" }))}</h1>
+      <button class="chip" id="today">Today</button>
+      <button class="nav" id="prev" aria-label="Previous month">‹</button>
+      <button class="nav" id="next" aria-label="Next month">›</button>
+    </div>
+    <div class="grid">${dows}${cells}</div>`;
+}
+
+const tabHtml = (id, label) => `<button class="tab ${state.tab === id ? "on" : ""}" data-tab="${id}" role="tab">${esc(label)}</button>`;
+
+function listHtml(today, od) {
+  const now = new Date();
+  if (state.tab === "upcoming") {
+    const items = between(today, addDays(today, UPCOMING_DAYS + 1)).filter(o => !isDone(o.r, o.t) && (o.r.a || o.t >= now));
+    return head("Coming up", `Next ${UPCOMING_DAYS} days`) + (items.length ? grouped(items, today, true) : empty("Nothing planned", "Your next 30 days are clear. 🎉")) + totalHtml(items, "to pay");
+  }
+  if (state.tab === "overdue")
+    return head("Overdue", "Passed without being marked done") + (od.length ? grouped(od, today, true) : empty("All caught up", "Nothing overdue. ✅")) + totalHtml(od, "overdue");
+  const items = between(state.selected, addDays(state.selected, 1));
+  const done = items.filter(o => isDone(o.r, o.t)).length;
+  return head(friendly(state.selected, today) === fmtShort(state.selected) ? fmtLong(state.selected) : `${friendly(state.selected, today)} · ${fmtLong(state.selected)}`,
+      items.length ? `${items.length} reminder${items.length > 1 ? "s" : ""}${done ? ` · ${done} done` : ""}` : "No reminders")
+    + (items.length ? items.map(o => itemHtml(o, false, today)).join("") : empty("Nothing planned", "Pick another day, or add one with ➕ New reminder."));
+}
+
+const head = (title, sub) => `<div class="list-head"><h2>${esc(title)}</h2><div class="hint">${esc(sub)}</div></div>`;
+const empty = (title, text) => `<div class="empty"><b>${esc(title)}</b>${esc(text)}</div>`;
+function totalHtml(items, what) {
+  const t = total(items.map(o => o.r));
+  return t ? `<div class="total">💰 ${esc(t)} <span class="hint">${esc(what)}</span></div>` : "";
+}
+function grouped(items, today, withDayTitles) {
+  let html = "", last = "";
+  for (const o of items) {
+    const k = dayKey(o.t);
+    if (withDayTitles && k !== last) {
+      const n = daysBetween(today, o.t);
+      html += `<div class="day-title">${esc(friendly(o.t, today))}${n > 1 ? ` · in ${n} days` : n < -1 ? ` · ${-n} days ago` : ""}</div>`;
+      last = k;
+    }
+    html += itemHtml(o, false, today);
+  }
+  return html;
+}
+function itemHtml(o, showDate, today) {
+  const r = o.r, done = isDone(r, o.t);
+  const meta = [r.a ? "All day" : fmtTime(o.t)];
+  if (r.rp) meta.push("🔁 " + REPEAT[r.rp]);
+  const m = money(r.m, r.k); if (m) meta.push("💰 " + m);
+  if (r.l) meta.push("🔑");
+  const waiting = pending.some(p => p.key === `${r.i}_${stamp(o.t)}`);
+  return `<button class="item ${done ? "done" : ""}" data-open="${r.i}_${stamp(o.t)}">
+      <span class="bar" style="background:#${esc(r.c)}"></span>
+      <span class="grow"><div class="title">${esc(r.t)}</div><div class="meta">${esc(meta.join("  ·  "))}</div></span>
+      ${waiting ? `<span class="badge wait">⏳ Sent</span>` : r.p === 2 && !done ? `<span class="badge high">High</span>` : ""}
+    </button>`;
+}
+
+// ---------- Reminder sheet ----------
+function openSheet(r, t) {
+  if (!r) return;
+  const today = startOfDay(new Date()), done = isDone(r, t), m = money(r.m, r.k);
+  const facts = [
+    `📅 ${esc(fmtLong(t))}${r.a ? " · all day" : " at " + esc(fmtTime(t))}`,
+    r.rp ? `🔁 ${esc(REPEAT[r.rp])}${r.until ? " until " + esc(fmtShort(r.until)) : ""}` : "",
+    m ? `💰 ${esc(m)}` : "",
+    r.p === 2 ? "❗ High priority" : r.p === 0 ? "Low priority" : "",
+    r.l ? "🔑 Login saved in Calendar" : "",
+    done ? "✅ Done" : "",
+  ].filter(Boolean).map(f => `<div>${f}</div>`).join("");
+  const sheet = $("#sheet");
+  sheet.innerHTML = `<div class="grab"></div>
+    <div class="row"><span class="bar" style="background:#${esc(r.c)};height:22px"></span><h3 class="grow">${esc(r.t)}</h3></div>
+    ${r.n ? `<div class="notes">${esc(r.n)}</div>` : ""}
+    <div class="facts">${facts}</div>
+    <div class="actions">
+      ${done ? `<button class="btn wide" data-act="u">↩️ Mark not done</button>`
+             : `<button class="btn primary wide" data-act="d">✅ Done</button>
+                <div class="snooze"><button class="btn" data-act="s" data-x="60">⏰ 1 hour</button><button class="btn" data-act="s" data-x="180">⏰ 3 hours</button><button class="btn" data-act="s" data-x="t">⏰ Tomorrow</button></div>`}
+      ${r.l ? `<button class="btn" data-act="l">🔑 Show login</button>` : ""}
+      <button class="btn" data-act="o">💬 Open in chat</button>
+      <button class="btn danger ${r.l ? "wide" : ""}" data-act="x">🗑 Delete</button>
+    </div>
+    <div class="hint sent">Changes go to Calendar on your PC through the bot. If the PC is off, they're applied when it starts.</div>`;
+  sheet.querySelectorAll("[data-act]").forEach(b => b.onclick = () => act(b.dataset.act, r, t, b.dataset.x));
+  $("#scrim").classList.add("open");
+  sheet.classList.add("open");
+  if (tg && tg.BackButton) { tg.BackButton.show(); tg.BackButton.onClick(closeSheet); }
+}
+function closeSheet() {
+  $("#scrim").classList.remove("open");
+  $("#sheet").classList.remove("open");
+  if (tg && tg.BackButton) { tg.BackButton.offClick(closeSheet); tg.BackButton.hide(); }
+}
+$("#scrim").onclick = closeSheet;
+
+/** Sends "/start <action>_<id>_<occurrence>[_<extra>]" to the bot, which passes it to Calendar. */
+function act(kind, r, t, extra) {
+  const run = () => {
+    const payload = [kind, r.i, stamp(t), extra].filter(Boolean).join("_");
+    const link = `https://t.me/${snapshot.bot}?start=${payload}`;
+    if (kind !== "l" && kind !== "o") { // those don't change anything
+      pending.push({ kind, id: r.i, key: `${r.i}_${stamp(t)}`, at: Date.now() });
+      savePending();
+    }
+    haptic("success");
+    if (tg && tg.openTelegramLink) tg.openTelegramLink(link); else window.open(link, "_blank");
+    closeSheet();
+    render();
+    toast({ d: "✅ Marked done", u: "↩️ Marked not done", s: "⏰ Snoozed", l: "🔑 The bot will send the login", x: "🗑 Deleted", o: "💬 The bot will send it in the chat" }[kind]);
+  };
+  if (kind !== "x") return run();
+  const question = r.rp ? `Delete “${r.t}” and all its repeats?` : `Delete “${r.t}”?`;
+  if (tg && tg.showConfirm && tg.isVersionAtLeast && tg.isVersionAtLeast("6.2")) tg.showConfirm(question, ok => ok && run());
+  else if (confirm(question)) run();
+}
+
+// ---------- New reminder form (opened from the "➕ New reminder" button) ----------
+const form = { color: 0, priority: 1, allDay: true };
+function renderForm() {
+  const now = new Date(), next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1);
+  $("#app").innerHTML = `
+    <div class="card">
+      <label class="f"><span>Title</span><input id="t" maxlength="200" placeholder="What should I remind you about?" autocomplete="off"></label>
+      <div class="error" id="err">Please enter a title.</div>
+      <div class="two">
+        <label class="f"><span>Date</span><input id="d" type="date" value="${dayKey(now).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")}"></label>
+        <label class="f"><span>Time</span><input id="tm" type="time" value="${pad(next.getHours())}:00" disabled></label>
+      </div>
+      <div class="toggle"><span>All day <span class="hint">(notifies at 9:00)</span></span><input id="ad" type="checkbox" checked style="width:auto"></div>
+      <div class="two">
+        <label class="f"><span>Repeat</span><select id="r">${REPEAT.map((x, i) => `<option value="${i}">${x}</option>`).join("")}</select></label>
+        <label class="f"><span>Amount</span><input id="m" placeholder="$36" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <label class="f"><span>Priority</span><div class="seg" id="p">${["Low", "Normal", "High"].map((x, i) => `<button type="button" data-p="${i}" class="${i === 1 ? "on" : ""}">${x}</button>`).join("")}</div></label>
+      <label class="f"><span>Color</span><div class="colors" id="c">${PALETTE.map((c, i) => `<button type="button" data-c="${i}" class="${i === 0 ? "on" : ""}" style="background:#${c}" aria-label="${PALETTE_NAMES[i]}"></button>`).join("")}</div></label>
+      <label class="f" style="margin-bottom:0"><span>Notes</span><textarea id="n" maxlength="1000" placeholder="Optional details"></textarea></label>
+    </div>
+    <button class="btn primary local-submit" id="submit">Add reminder</button>
+    <div class="hint foot">It's sent to Calendar on your PC through the bot. If the PC is off, it's added when it starts (within 24 hours).</div>`;
+
+  $("#ad").onchange = e => { form.allDay = e.target.checked; $("#tm").disabled = form.allDay; };
+  $("#p").onclick = e => { const b = e.target.closest("[data-p]"); if (!b) return; form.priority = +b.dataset.p; $("#p").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); haptic("selection"); };
+  $("#c").onclick = e => { const b = e.target.closest("[data-c]"); if (!b) return; form.color = +b.dataset.c; $("#c").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); haptic("selection"); };
+  $("#t").oninput = () => { $("#err").style.display = "none"; };
+
+  if (tg && tg.MainButton && inTelegram) {
+    tg.MainButton.setText("Add reminder");
+    tg.MainButton.onClick(submit);
+    tg.MainButton.show();
+  } else {
+    $("#submit").style.display = "block";
+    $("#submit").onclick = submit;
+  }
+}
+function submit() {
+  const title = $("#t").value.trim();
+  if (!title) { $("#err").style.display = "block"; $("#t").focus(); haptic("error"); return; }
+  const data = JSON.stringify({
+    t: title, d: $("#d").value, tm: form.allDay ? null : $("#tm").value, r: +$("#r").value,
+    p: form.priority, m: $("#m").value.trim(), c: PALETTE[form.color], n: $("#n").value.trim(),
+  });
+  if (tg && tg.sendData && inTelegram) tg.sendData(data); // closes the Mini App
+  else alert("Outside Telegram this would send:\n" + data);
+}
+
+// ---------- Telegram helpers ----------
+function haptic(kind) {
+  try {
+    if (!tg || !tg.HapticFeedback) return;
+    if (kind === "selection") tg.HapticFeedback.selectionChanged();
+    else tg.HapticFeedback.notificationOccurred(kind);
+  } catch {}
+}
+let toastTimer;
+function toast(text) {
+  const el = $("#toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+if (tg) {
+  tg.ready();
+  tg.expand();
+  try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch {}
+}
+render();
+</script>
+</body>
+</html>
