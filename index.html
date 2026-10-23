@@ -7,125 +7,191 @@
 <!-- Telegram Mini App for the Calendar desktop app. Reminders arrive in the link (?d=…); see CalendarApp/Services/MiniApp.cs. -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Saira:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Neon glass. Same tokens as CalendarApp/App.xaml. */
   :root {
-    --bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
-    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
-    --text: var(--tg-theme-text-color, #111111);
-    --hint: var(--tg-theme-hint-color, #8a8a8e);
-    --accent: var(--tg-theme-button-color, #2481cc);
-    --accent-text: var(--tg-theme-button-text-color, #ffffff);
-    --link: var(--tg-theme-link-color, #2481cc);
-    --line: var(--tg-theme-section-separator-color, rgba(128, 128, 128, 0.2));
-    --danger: var(--tg-theme-destructive-text-color, #e53935);
-    --soft: rgba(128, 128, 128, 0.12);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not(.tg) { --bg: #0f0f12; --card: #1c1c21; --text: #f2f2f5; --hint: #8d8d94; --line: rgba(255,255,255,.08); }
+    --void: #070A1A;
+    --glass: rgba(20, 26, 58, 0.55);
+    --glass-solid: rgba(17, 22, 50, 0.94);
+    --stroke: rgba(140, 147, 201, 0.18);
+    --ion: #5CE1FF;
+    --pulse: #B57CFF;
+    --signal: #FF5C8A;
+    --ink: #E8ECFF;
+    --haze: #8C93C9;
+    --chip: rgba(184, 196, 255, 0.09);
+    --neon: linear-gradient(135deg, var(--ion), var(--pulse));
+    --display: "Saira", "Bahnschrift", system-ui, sans-serif;
+    --body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  html { background: var(--void); }
+  /* No background on body, or it would paint over the glows below. */
+  body { margin: 0; color: var(--ink); }
   body {
-    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 15px/1.45 var(--body);
+    -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
-    padding: 12px 12px calc(24px + env(safe-area-inset-bottom));
+    min-height: 100vh;
+    padding: 14px 14px calc(28px + env(safe-area-inset-bottom));
+  }
+  /* Two soft glows behind the glass. */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(520px 520px at -5% -8%, rgba(92, 225, 255, 0.22), transparent 70%),
+      radial-gradient(600px 600px at 108% 108%, rgba(181, 124, 255, 0.24), transparent 70%);
   }
   button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-  .card { background: var(--card); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
-  .hint { color: var(--hint); font-size: 13px; }
-  .row { display: flex; align-items: center; gap: 8px; }
-  .grow { flex: 1; min-width: 0; }
+  :focus-visible { outline: 2px solid var(--ion); outline-offset: 2px; }
+  .glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid var(--stroke);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    border-radius: 22px;
+  }
+
+  /* Day ring */
+  .hero { display: flex; align-items: center; gap: 18px; padding: 18px; margin-bottom: 14px; }
+  .ring { position: relative; width: 112px; height: 112px; flex: none; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+  .ring .track { stroke: rgba(255, 255, 255, 0.09); }
+  .ring .arc { filter: drop-shadow(0 0 6px rgba(92, 225, 255, 0.6)); transition: stroke-dashoffset 1.2s cubic-bezier(.2, .8, .2, 1); }
+  .ring .center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .ring .num { font: 600 40px/1 var(--display); }
+  .ring .wd { color: var(--haze); font-size: 13px; margin-top: 2px; }
+  .hero-text { min-width: 0; }
+  .due { font: 600 24px/1.15 var(--display); margin: 0; }
+  .amount { font: 600 17px/1.3 var(--display); color: var(--ion); margin: 4px 0 0; text-shadow: 0 0 14px rgba(92, 225, 255, 0.45); }
+  .next { color: var(--haze); font-size: 13px; margin: 6px 0 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .overdue-link { color: var(--signal); font-size: 13px; font-weight: 700; margin-top: 6px; }
 
   /* Month */
-  .month-head { display: flex; align-items: center; margin-bottom: 8px; }
-  .month-head h1 { font-size: 18px; margin: 0; flex: 1; }
-  .nav { width: 36px; height: 36px; border-radius: 50%; font-size: 20px; color: var(--link); }
-  .nav:active, .chip:active { background: var(--soft); }
-  .chip { color: var(--link); padding: 6px 10px; border-radius: 16px; font-size: 14px; }
+  .month { padding: 14px 10px 8px; margin-bottom: 14px; }
+  .month-head { display: flex; align-items: center; gap: 2px; margin: 0 6px 8px; }
+  .month-head h2 { flex: 1; margin: 0; font: 600 20px var(--display); }
+  .icon-btn { width: 36px; height: 36px; border-radius: 12px; font-size: 20px; line-height: 1; }
+  .text-btn { color: var(--ion); padding: 7px 10px; border-radius: 12px; font-weight: 700; font-size: 14px; }
+  .icon-btn:active, .text-btn:active, .day:active { background: var(--chip); }
   .grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
-  .dow { color: var(--hint); font-size: 12px; padding: 4px 0 6px; }
-  .day { height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 3px; }
-  .num { width: 30px; height: 30px; line-height: 30px; border-radius: 50%; font-size: 15px; }
-  .day.other .num { color: var(--hint); opacity: .6; }
-  .day.today .num { color: var(--accent); font-weight: 700; }
-  .day.sel .num { background: var(--accent); color: var(--accent-text); font-weight: 600; }
-  .dots { display: flex; gap: 3px; height: 6px; margin-top: 3px; }
-  .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .dow { color: var(--haze); font-size: 12px; padding-bottom: 6px; }
+  .day { height: 50px; display: flex; flex-direction: column; align-items: center; padding-top: 3px; border-radius: 14px; }
+  .day .n { width: 34px; height: 34px; line-height: 34px; border-radius: 50%; font: 500 15px/34px var(--display); }
+  .day.other .n { color: var(--haze); opacity: 0.45; }
+  .day.today .n { color: var(--ion); font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--ion), 0 0 14px rgba(92, 225, 255, 0.35); }
+  .day.sel .n { background: var(--neon); color: var(--void); font-weight: 700; box-shadow: 0 0 18px rgba(92, 225, 255, 0.45); }
+  .dots { display: flex; gap: 3px; height: 5px; margin-top: 5px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
 
   /* Tabs */
-  .tabs { display: flex; background: var(--soft); border-radius: 10px; padding: 2px; margin-bottom: 12px; }
-  .tab { flex: 1; padding: 7px 0; border-radius: 8px; font-size: 14px; color: var(--hint); }
-  .tab.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .tabs { display: flex; padding: 4px; margin-bottom: 14px; border-radius: 16px; }
+  .tab { flex: 1; padding: 9px 0; border-radius: 12px; color: var(--haze); font-weight: 700; font-size: 14px; }
+  .tab.on { color: var(--ink); background: rgba(92, 225, 255, 0.12); box-shadow: inset 0 0 0 1px rgba(92, 225, 255, 0.4); }
+  .tab .count { color: var(--signal); margin-left: 4px; }
 
-  /* List */
-  .list-head { margin: 2px 4px 8px; }
-  .list-head h2 { font-size: 16px; margin: 0; }
-  .day-title { font-size: 13px; font-weight: 600; color: var(--hint); text-transform: uppercase; letter-spacing: .02em; margin: 14px 4px 6px; }
-  .day-title:first-child { margin-top: 2px; }
-  .item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 4px; border-top: 1px solid var(--line); }
-  .item:first-child, .day-title + .item { border-top: 0; }
-  .bar { width: 4px; align-self: stretch; border-radius: 2px; flex: none; }
-  .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { color: var(--hint); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .done .title { text-decoration: line-through; opacity: .55; }
-  .done .meta { opacity: .55; }
-  .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; flex: none; }
-  .badge.high { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
-  .badge.wait { color: var(--hint); background: var(--soft); }
-  .total { margin: 10px 4px 0; font-weight: 600; }
-  .empty { text-align: center; padding: 22px 8px; color: var(--hint); }
-  .empty b { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
-  .foot { text-align: center; margin-top: 4px; }
+  /* Timeline */
+  .panel { padding: 16px 12px 10px; }
+  .panel-head { margin: 0 6px 6px; }
+  .panel-head h3 { font: 600 22px/1.2 var(--display); margin: 0; }
+  .panel-head p { color: var(--haze); font-size: 13px; margin: 2px 0 0; }
+  .day-title { display: flex; gap: 8px; align-items: baseline; margin: 14px 0 2px 36px; font: 600 15px var(--display); }
+  .day-title span { color: var(--haze); font: 500 12px var(--body); }
+  .item { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 9px 4px 9px 0; border-radius: 14px; }
+  .item:active { background: var(--chip); }
+  .rail { position: relative; align-self: stretch; }
+  .rail::before { content: ""; position: absolute; left: 50%; top: -9px; bottom: -9px; width: 1px; background: rgba(140, 147, 201, 0.22); }
+  .node { position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%, -50%);
+          box-shadow: 0 0 0 4px var(--void), 0 0 14px 3px currentColor; }
+  .main { min-width: 0; display: block; }
+  .title { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+  .chip { background: var(--chip); color: var(--haze); font-size: 12px; padding: 2px 8px; border-radius: 8px; white-space: nowrap; }
+  .chip.money { color: var(--ion); font: 600 12px var(--display); background: rgba(92, 225, 255, 0.08); box-shadow: inset 0 0 0 1px rgba(92, 225, 255, 0.35); }
+  .done .main { opacity: 0.45; }
+  .done .title { text-decoration: line-through; }
+  .done .node { box-shadow: 0 0 0 4px var(--void); opacity: 0.5; }
+  .pill { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 10px; }
+  .pill.high { color: var(--signal); background: rgba(255, 92, 138, 0.12); box-shadow: inset 0 0 0 1px rgba(255, 92, 138, 0.5); }
+  .pill.wait { color: var(--haze); background: var(--chip); }
+  .total { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 6px 4px; padding-top: 12px; border-top: 1px solid var(--stroke); color: var(--haze); font-size: 13px; }
+  .total b { font: 600 20px var(--display); color: var(--ion); text-shadow: 0 0 14px rgba(92, 225, 255, 0.4); }
+  .empty { text-align: center; padding: 26px 12px; color: var(--haze); }
+  .empty b { display: block; font: 600 18px var(--display); color: var(--ink); margin-bottom: 4px; }
+  .foot { color: var(--haze); font-size: 12px; text-align: center; margin: 16px 0 0; line-height: 1.7; }
+  .sync { display: inline-flex; align-items: center; gap: 7px; }
+  .sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--ion); box-shadow: 0 0 8px var(--ion); }
 
-  /* Sheet */
-  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  /* Reminder sheet */
+  .scrim { position: fixed; inset: 0; background: rgba(3, 5, 14, 0.6); opacity: 0; pointer-events: none; transition: opacity 0.2s; }
   .scrim.open { opacity: 1; pointer-events: auto; }
   .sheet {
-    position: fixed; left: 0; right: 0; bottom: 0; max-height: 85vh; overflow: auto;
-    background: var(--card); border-radius: 16px 16px 0 0;
-    padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
-    transform: translateY(100%); transition: transform .25s cubic-bezier(.2,.8,.2,1);
+    position: fixed; left: 0; right: 0; bottom: 0; max-height: 86vh; overflow: auto;
+    background: var(--glass-solid); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+    border: 1px solid var(--stroke); border-bottom: 0; border-radius: 26px 26px 0 0;
+    padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
+    transform: translateY(100%); transition: transform 0.28s cubic-bezier(.2, .8, .2, 1);
   }
   .sheet.open { transform: none; }
-  .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 12px; }
-  .sheet h3 { margin: 0 0 4px; font-size: 18px; }
-  .notes { white-space: pre-wrap; background: var(--soft); border-radius: 10px; padding: 8px 10px; margin: 10px 0; font-size: 14px; }
-  .facts { margin: 10px 0 14px; display: grid; gap: 6px; font-size: 14px; }
+  .grab { width: 38px; height: 4px; border-radius: 2px; background: rgba(140, 147, 201, 0.35); margin: 0 auto 14px; }
+  .sheet-head { display: flex; gap: 12px; align-items: center; }
+  .sheet-head i { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: 0 0 14px 3px currentColor; }
+  .sheet h3 { margin: 0; font: 600 22px/1.2 var(--display); }
+  .notes { white-space: pre-wrap; background: var(--chip); border-radius: 14px; padding: 10px 12px; margin: 12px 0 0; font-size: 14px; }
+  .facts { margin: 14px 0 16px; display: grid; gap: 8px; font-size: 14px; }
+  .facts div { display: flex; gap: 10px; }
+  .facts span:first-child { width: 20px; text-align: center; }
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .btn { background: var(--soft); border-radius: 10px; padding: 11px 8px; font-weight: 600; text-align: center; }
-  .btn:active { opacity: .7; }
-  .btn.primary { background: var(--accent); color: var(--accent-text); }
-  .btn.danger { color: var(--danger); }
+  .btn { background: rgba(184, 196, 255, 0.07); box-shadow: inset 0 0 0 1px var(--stroke); border-radius: 14px; padding: 12px 8px; font-weight: 700; text-align: center; }
+  .btn:active { opacity: 0.7; }
+  .btn.primary { background: var(--neon); color: var(--void); box-shadow: 0 0 24px rgba(92, 225, 255, 0.35); }
+  .btn.danger { color: var(--signal); }
   .btn.wide { grid-column: 1 / -1; }
-  .btn[disabled] { opacity: .4; }
   .snooze { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; grid-column: 1 / -1; }
-  .sent { margin-top: 12px; text-align: center; }
+  .sheet .hint { color: var(--haze); font-size: 12px; text-align: center; margin: 14px 0 0; }
 
-  /* Form */
-  label.f { display: block; margin-bottom: 12px; }
-  label.f > span { display: block; font-size: 13px; color: var(--hint); margin: 0 4px 4px; }
+  /* New reminder form */
+  .form { padding: 18px 16px 6px; }
+  .form h1 { font: 600 24px var(--display); margin: 0 0 14px; }
+  label.f { display: block; margin-bottom: 14px; }
+  label.f > span { display: block; font-size: 13px; color: var(--haze); margin: 0 4px 5px; }
   input, select, textarea {
-    width: 100%; font: inherit; color: var(--text); background: var(--card);
-    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none;
+    width: 100%; font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--stroke); border-radius: 14px; padding: 11px 13px; outline: none;
   }
-  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
-  textarea { min-height: 70px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { border-color: var(--ion); box-shadow: 0 0 0 3px rgba(92, 225, 255, 0.15); }
+  input:disabled { opacity: 0.4; }
+  select option { background: #121733; }
+  textarea { min-height: 76px; resize: vertical; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .toggle { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 12px; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; margin: -4px 4px 14px; }
+  .toggle span span { color: var(--haze); font-size: 13px; }
+  .toggle input { width: 20px; height: 20px; accent-color: var(--ion); }
   .seg { display: flex; gap: 6px; }
-  .seg button { flex: 1; padding: 9px 0; border-radius: 10px; background: var(--soft); font-size: 14px; }
-  .seg button.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
-  .colors { display: flex; gap: 10px; flex-wrap: wrap; padding: 2px 4px; }
+  .seg button { flex: 1; padding: 10px 0; border-radius: 12px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px var(--stroke); font-size: 14px; font-weight: 600; }
+  .seg button.on { background: rgba(92, 225, 255, 0.12); box-shadow: inset 0 0 0 1px var(--ion); color: var(--ion); }
+  .seg button.on.high { color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); background: rgba(255, 92, 138, 0.12); }
+  .colors { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px; }
   .colors button { width: 28px; height: 28px; border-radius: 50%; }
-  .colors button.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
-  .error { color: var(--danger); font-size: 13px; margin: -6px 4px 10px; display: none; }
-  .local-submit { display: none; width: 100%; }
+  .colors button.on { box-shadow: 0 0 0 3px var(--void), 0 0 0 5px currentColor, 0 0 16px currentColor; }
+  .error { color: var(--signal); font-size: 13px; margin: -8px 4px 12px; display: none; }
+  .local-submit { display: none; width: 100%; margin-top: 12px; }
+
   .toast {
-    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
-    background: rgba(30,30,30,.92); color: #fff; padding: 10px 14px; border-radius: 12px; font-size: 14px;
-    opacity: 0; transition: .2s; pointer-events: none; max-width: 90%; text-align: center;
+    position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+    background: var(--glass-solid); border: 1px solid var(--stroke); color: var(--ink); padding: 10px 16px; border-radius: 14px; font-size: 14px;
+    opacity: 0; transition: 0.2s; pointer-events: none; max-width: 90%; text-align: center;
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ring .arc, .sheet, .scrim, .toast { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -138,7 +204,6 @@
 "use strict";
 const tg = window.Telegram && window.Telegram.WebApp;
 const inTelegram = !!(tg && tg.initData !== undefined && tg.platform !== "unknown");
-if (inTelegram) document.documentElement.classList.add("tg");
 
 // ---------- Shared with the desktop app ----------
 const REPEAT = ["Never", "Every day", "Every weekday", "Every week", "Every month", "Every year"];
@@ -310,25 +375,26 @@ const now = new Date();
 const state = { tab: "day", selected: startOfDay(now), month: new Date(now.getFullYear(), now.getMonth(), 1) };
 
 // ---------- Rendering ----------
+const RING = 2 * Math.PI * 50; // circumference of the day ring
+let firstPaint = true;
+
 function render() {
   if (mode === "add") return renderForm();
   const app = $("#app");
   if (!snapshot || snapshot.broken) {
-    app.innerHTML = `<div class="card empty"><b>${snapshot ? "Couldn't read your reminders" : "No reminders here yet"}</b>
-      Open this from the <b style="display:inline">📅 Calendar</b> button in the chat with your Calendar bot.</div>`;
+    app.innerHTML = `<div class="glass empty"><b>${snapshot ? "Couldn't read your reminders" : "No reminders here yet"}</b>
+      Open this from the 📅 Calendar button in the chat with your Calendar bot.</div>`;
     return;
   }
-  const today = startOfDay(new Date());
-  const od = overdue(new Date());
+  const now = new Date(), today = startOfDay(now), od = overdue(now);
   app.innerHTML = `
-    <div class="card">${monthHtml(today)}</div>
-    <div class="tabs" role="tablist">
-      ${tabHtml("day", "Day")}${tabHtml("upcoming", "Upcoming")}${tabHtml("overdue", od.length ? `Overdue (${od.length})` : "Overdue")}
-    </div>
-    <div class="card">${listHtml(today, od)}</div>
-    <div class="hint foot">Synced from your PC ${esc(friendly(snapshot.syncedAt, today).toLowerCase())} at ${esc(fmtTime(snapshot.syncedAt))}
-      ${pending.length ? ` · ${pending.length} change${pending.length > 1 ? "s" : ""} waiting for it` : ""}<br>
-      Add reminders with <b>➕ New reminder</b> under the message box.</div>`;
+    ${heroHtml(now, today, od)}
+    <section class="glass month">${monthHtml(today)}</section>
+    <nav class="glass tabs" role="tablist">${tabHtml("day", "Day")}${tabHtml("upcoming", "Upcoming")}${tabHtml("overdue", "Overdue", od.length)}</nav>
+    <section class="glass panel">${listHtml(today, od)}</section>
+    <p class="foot"><span class="sync"><i></i>Synced from your PC ${esc(friendly(snapshot.syncedAt, today).toLowerCase())} at ${esc(fmtTime(snapshot.syncedAt))}</span>
+      ${pending.length ? `<br>${pending.length} change${pending.length > 1 ? "s" : ""} on the way to your PC` : ""}
+      <br>Add reminders with ➕ New reminder under the message box.</p>`;
 
   app.querySelectorAll("[data-day]").forEach(el => el.onclick = () => {
     state.selected = parseStamp(el.dataset.day); state.tab = "day";
@@ -343,13 +409,47 @@ function render() {
   $("#prev").onclick = () => { state.month = addMonths(state.month, -1); render(); };
   $("#next").onclick = () => { state.month = addMonths(state.month, 1); render(); };
   $("#today").onclick = () => { state.selected = today; state.month = new Date(today.getFullYear(), today.getMonth(), 1); state.tab = "day"; render(); };
+  const go = $("#goOverdue");
+  if (go) go.onclick = () => { state.tab = "overdue"; haptic("selection"); render(); };
+
+  // The one entrance animation: the ring draws to the time of day.
+  if (firstPaint) {
+    firstPaint = false;
+    const arc = $(".arc", app);
+    requestAnimationFrame(() => requestAnimationFrame(() => { arc.style.strokeDashoffset = arc.dataset.offset; }));
+  }
+}
+
+function heroHtml(now, today, od) {
+  const due = between(today, addDays(today, 1)).filter(o => !isDone(o.r, o.t));
+  const next = between(addDays(today, 1), addDays(today, 366)).find(o => !isDone(o.r, o.t));
+  const amount = total(due.map(o => o.r));
+  const progress = Math.min(Math.max((now - today) / 864e5, 0.003), 0.999);
+  const offset = (RING * (1 - progress)).toFixed(1);
+  const inDays = next ? daysBetween(today, next.t) : 0;
+  return `<section class="glass hero">
+      <div class="ring" role="img" aria-label="${Math.round(progress * 100)}% of today has passed">
+        <svg viewBox="0 0 112 112" aria-hidden="true">
+          <defs><linearGradient id="neon" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5CE1FF"/><stop offset="1" stop-color="#B57CFF"/></linearGradient></defs>
+          <circle class="track" cx="56" cy="56" r="50" fill="none" stroke-width="7"/>
+          <circle class="arc" cx="56" cy="56" r="50" fill="none" stroke="url(#neon)" stroke-width="7" stroke-linecap="round"
+                  stroke-dasharray="${RING.toFixed(1)}" data-offset="${offset}" style="stroke-dashoffset:${firstPaint ? RING.toFixed(1) : offset}"/>
+        </svg>
+        <div class="center"><div class="num">${now.getDate()}</div><div class="wd">${esc(now.toLocaleDateString([], { weekday: "long" }))}</div></div>
+      </div>
+      <div class="hero-text">
+        <h1 class="due">${due.length === 0 ? "Nothing due today" : due.length === 1 ? "1 due today" : `${due.length} due today`}</h1>
+        ${amount ? `<p class="amount">${esc(amount)} to pay</p>` : ""}
+        <p class="next">${next ? `Next: ${esc(next.r.t)}, ${inDays === 1 ? "tomorrow" : `in ${inDays} days`}` : "Nothing else coming up"}</p>
+        ${od.length ? `<button class="overdue-link" id="goOverdue">${od.length} overdue</button>` : ""}
+      </div>
+    </section>`;
 }
 
 function monthHtml(today) {
   const first = state.month, start = addDays(first, -first.getDay());
-  const end = addDays(start, 42);
   const colors = new Map();
-  for (const o of between(start, end)) {
+  for (const o of between(start, addDays(start, 42))) {
     if (isDone(o.r, o.t)) continue;
     const k = dayKey(o.t), set = colors.get(k) || new Set();
     set.add(o.r.c); colors.set(k, set);
@@ -357,85 +457,96 @@ function monthHtml(today) {
   const dows = [...Array(7)].map((_, i) => `<div class="dow">${esc(addDays(start, i).toLocaleDateString([], { weekday: "narrow" }))}</div>`).join("");
   let cells = "";
   for (let i = 0; i < 42; i++) {
-    const d = addDays(start, i), k = dayKey(d);
+    const d = addDays(start, i), k = dayKey(d), dayColors = [...(colors.get(k) || [])];
     const cls = ["day", d.getMonth() !== first.getMonth() && "other", sameDay(d, today) && "today", state.tab === "day" && sameDay(d, state.selected) && "sel"].filter(Boolean).join(" ");
-    const dots = [...(colors.get(k) || [])].slice(0, 3).map(c => `<i class="dot" style="background:#${esc(c)}"></i>`).join("");
-    cells += `<button class="${cls}" data-day="${k}0000" aria-label="${esc(fmtLong(d))}"><span class="num">${d.getDate()}</span><span class="dots">${dots}</span></button>`;
+    const dots = dayColors.slice(0, 3).map(c => `<i class="dot" style="background:#${esc(c)};color:#${esc(c)}"></i>`).join("");
+    const label = fmtLong(d) + (dayColors.length ? `, ${colors.get(k).size} reminder color${colors.get(k).size > 1 ? "s" : ""}` : "");
+    cells += `<button class="${cls}" data-day="${k}0000" aria-label="${esc(label)}"><span class="n">${d.getDate()}</span><span class="dots">${dots}</span></button>`;
   }
   return `<div class="month-head">
-      <h1>${esc(first.toLocaleDateString([], { month: "long", year: "numeric" }))}</h1>
-      <button class="chip" id="today">Today</button>
-      <button class="nav" id="prev" aria-label="Previous month">‹</button>
-      <button class="nav" id="next" aria-label="Next month">›</button>
+      <h2>${esc(first.toLocaleDateString([], { month: "long", year: "numeric" }))}</h2>
+      <button class="text-btn" id="today">Today</button>
+      <button class="icon-btn" id="prev" aria-label="Previous month">‹</button>
+      <button class="icon-btn" id="next" aria-label="Next month">›</button>
     </div>
     <div class="grid">${dows}${cells}</div>`;
 }
 
-const tabHtml = (id, label) => `<button class="tab ${state.tab === id ? "on" : ""}" data-tab="${id}" role="tab">${esc(label)}</button>`;
+const tabHtml = (id, label, count) =>
+  `<button class="tab ${state.tab === id ? "on" : ""}" data-tab="${id}" role="tab" aria-selected="${state.tab === id}">${esc(label)}${count ? `<span class="count">${count}</span>` : ""}</button>`;
 
 function listHtml(today, od) {
   const now = new Date();
   if (state.tab === "upcoming") {
     const items = between(today, addDays(today, UPCOMING_DAYS + 1)).filter(o => !isDone(o.r, o.t) && (o.r.a || o.t >= now));
-    return head("Coming up", `Next ${UPCOMING_DAYS} days`) + (items.length ? grouped(items, today, true) : empty("Nothing planned", "Your next 30 days are clear. 🎉")) + totalHtml(items, "to pay");
+    return head("Coming up", `Your next ${UPCOMING_DAYS} days`)
+      + (items.length ? grouped(items, today) : empty("Nothing planned", "Your next 30 days are clear."))
+      + totalHtml(items, "To pay in 30 days");
   }
   if (state.tab === "overdue")
-    return head("Overdue", "Passed without being marked done") + (od.length ? grouped(od, today, true) : empty("All caught up", "Nothing overdue. ✅")) + totalHtml(od, "overdue");
+    return head("Overdue", "Passed without being marked done")
+      + (od.length ? grouped(od, today) : empty("All caught up", "Nothing is overdue."))
+      + totalHtml(od, "Overdue");
   const items = between(state.selected, addDays(state.selected, 1));
   const done = items.filter(o => isDone(o.r, o.t)).length;
-  return head(friendly(state.selected, today) === fmtShort(state.selected) ? fmtLong(state.selected) : `${friendly(state.selected, today)} · ${fmtLong(state.selected)}`,
-      items.length ? `${items.length} reminder${items.length > 1 ? "s" : ""}${done ? ` · ${done} done` : ""}` : "No reminders")
-    + (items.length ? items.map(o => itemHtml(o, false, today)).join("") : empty("Nothing planned", "Pick another day, or add one with ➕ New reminder."));
+  const name = friendly(state.selected, today);
+  return head(name === fmtShort(state.selected) ? fmtLong(state.selected) : name,
+      items.length ? `${items.length} reminder${items.length > 1 ? "s" : ""}${done ? `, ${done} done` : ""} on ${fmtLong(state.selected)}` : fmtLong(state.selected))
+    + (items.length ? items.map(o => itemHtml(o, today)).join("") : empty("Nothing planned", "Pick another day, or add one with ➕ New reminder."))
+    + totalHtml(items.filter(o => !isDone(o.r, o.t)), "To pay this day");
 }
 
-const head = (title, sub) => `<div class="list-head"><h2>${esc(title)}</h2><div class="hint">${esc(sub)}</div></div>`;
+const head = (title, sub) => `<div class="panel-head"><h3>${esc(title)}</h3><p>${esc(sub)}</p></div>`;
 const empty = (title, text) => `<div class="empty"><b>${esc(title)}</b>${esc(text)}</div>`;
 function totalHtml(items, what) {
   const t = total(items.map(o => o.r));
-  return t ? `<div class="total">💰 ${esc(t)} <span class="hint">${esc(what)}</span></div>` : "";
+  return t ? `<div class="total">${esc(what)}<b>${esc(t)}</b></div>` : "";
 }
-function grouped(items, today, withDayTitles) {
+function grouped(items, today) {
   let html = "", last = "";
   for (const o of items) {
     const k = dayKey(o.t);
-    if (withDayTitles && k !== last) {
+    if (k !== last) {
       const n = daysBetween(today, o.t);
-      html += `<div class="day-title">${esc(friendly(o.t, today))}${n > 1 ? ` · in ${n} days` : n < -1 ? ` · ${-n} days ago` : ""}</div>`;
+      const when = n > 1 ? `in ${n} days` : n < -1 ? `${-n} days ago` : "";
+      html += `<div class="day-title">${esc(friendly(o.t, today))}${when ? `<span>${when}</span>` : ""}</div>`;
       last = k;
     }
-    html += itemHtml(o, false, today);
+    html += itemHtml(o, today);
   }
   return html;
 }
-function itemHtml(o, showDate, today) {
-  const r = o.r, done = isDone(r, o.t);
-  const meta = [r.a ? "All day" : fmtTime(o.t)];
-  if (r.rp) meta.push("🔁 " + REPEAT[r.rp]);
-  const m = money(r.m, r.k); if (m) meta.push("💰 " + m);
-  if (r.l) meta.push("🔑");
+function itemHtml(o, today) {
+  const r = o.r, done = isDone(r, o.t), m = money(r.m, r.k);
+  const chips = [
+    `<span class="chip">${r.a ? "All day" : esc(fmtTime(o.t))}</span>`,
+    r.rp ? `<span class="chip">⟳ ${esc(REPEAT[r.rp])}</span>` : "",
+    m ? `<span class="chip money">${esc(m)}</span>` : "",
+    r.l ? `<span class="chip" aria-label="Login saved">🔑</span>` : "",
+  ].join("");
   const waiting = pending.some(p => p.key === `${r.i}_${stamp(o.t)}`);
   return `<button class="item ${done ? "done" : ""}" data-open="${r.i}_${stamp(o.t)}">
-      <span class="bar" style="background:#${esc(r.c)}"></span>
-      <span class="grow"><div class="title">${esc(r.t)}</div><div class="meta">${esc(meta.join("  ·  "))}</div></span>
-      ${waiting ? `<span class="badge wait">⏳ Sent</span>` : r.p === 2 && !done ? `<span class="badge high">High</span>` : ""}
+      <span class="rail"><i class="node" style="background:#${esc(r.c)};color:#${esc(r.c)}"></i></span>
+      <span class="main"><span class="title">${esc(r.t)}</span><span class="chips">${chips}</span></span>
+      ${waiting ? `<span class="pill wait">⏳ Sent</span>` : r.p === 2 && !done ? `<span class="pill high">High</span>` : "<span></span>"}
     </button>`;
 }
 
 // ---------- Reminder sheet ----------
 function openSheet(r, t) {
   if (!r) return;
-  const today = startOfDay(new Date()), done = isDone(r, t), m = money(r.m, r.k);
+  const done = isDone(r, t), m = money(r.m, r.k);
   const facts = [
-    `📅 ${esc(fmtLong(t))}${r.a ? " · all day" : " at " + esc(fmtTime(t))}`,
-    r.rp ? `🔁 ${esc(REPEAT[r.rp])}${r.until ? " until " + esc(fmtShort(r.until)) : ""}` : "",
-    m ? `💰 ${esc(m)}` : "",
-    r.p === 2 ? "❗ High priority" : r.p === 0 ? "Low priority" : "",
-    r.l ? "🔑 Login saved in Calendar" : "",
-    done ? "✅ Done" : "",
-  ].filter(Boolean).map(f => `<div>${f}</div>`).join("");
+    ["📅", `${fmtLong(t)}${r.a ? ", all day" : " at " + fmtTime(t)}`],
+    r.rp ? ["⟳", `${REPEAT[r.rp]}${r.until ? " until " + fmtShort(r.until) : ""}`] : null,
+    m ? ["💰", m] : null,
+    r.p === 2 ? ["❗", "High priority"] : r.p === 0 ? ["▽", "Low priority"] : null,
+    r.l ? ["🔑", "Login saved in Calendar"] : null,
+    done ? ["✅", "Done"] : null,
+  ].filter(Boolean).map(([icon, text]) => `<div><span aria-hidden="true">${icon}</span><span>${esc(text)}</span></div>`).join("");
   const sheet = $("#sheet");
   sheet.innerHTML = `<div class="grab"></div>
-    <div class="row"><span class="bar" style="background:#${esc(r.c)};height:22px"></span><h3 class="grow">${esc(r.t)}</h3></div>
+    <div class="sheet-head"><i style="background:#${esc(r.c)};color:#${esc(r.c)}"></i><h3>${esc(r.t)}</h3></div>
     ${r.n ? `<div class="notes">${esc(r.n)}</div>` : ""}
     <div class="facts">${facts}</div>
     <div class="actions">
@@ -446,7 +557,7 @@ function openSheet(r, t) {
       <button class="btn" data-act="o">💬 Open in chat</button>
       <button class="btn danger ${r.l ? "wide" : ""}" data-act="x">🗑 Delete</button>
     </div>
-    <div class="hint sent">Changes go to Calendar on your PC through the bot. If the PC is off, they're applied when it starts.</div>`;
+    <p class="hint">Changes go to Calendar on your PC through the bot. If the PC is off, they're applied when it starts.</p>`;
   sheet.querySelectorAll("[data-act]").forEach(b => b.onclick = () => act(b.dataset.act, r, t, b.dataset.x));
   $("#scrim").classList.add("open");
   sheet.classList.add("open");
@@ -485,24 +596,27 @@ const form = { color: 0, priority: 1, allDay: true };
 function renderForm() {
   const now = new Date(), next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1);
   $("#app").innerHTML = `
-    <div class="card">
+    <section class="glass form">
+      <h1>New reminder</h1>
       <label class="f"><span>Title</span><input id="t" maxlength="200" placeholder="What should I remind you about?" autocomplete="off"></label>
-      <div class="error" id="err">Please enter a title.</div>
+      <div class="error" id="err">Add a title first.</div>
       <div class="two">
         <label class="f"><span>Date</span><input id="d" type="date" value="${dayKey(now).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")}"></label>
         <label class="f"><span>Time</span><input id="tm" type="time" value="${pad(next.getHours())}:00" disabled></label>
       </div>
-      <div class="toggle"><span>All day <span class="hint">(notifies at 9:00)</span></span><input id="ad" type="checkbox" checked style="width:auto"></div>
+      <label class="toggle"><span>All day <span>notifies at 9:00</span></span><input id="ad" type="checkbox" checked></label>
       <div class="two">
         <label class="f"><span>Repeat</span><select id="r">${REPEAT.map((x, i) => `<option value="${i}">${x}</option>`).join("")}</select></label>
         <label class="f"><span>Amount</span><input id="m" placeholder="$36" inputmode="decimal" autocomplete="off"></label>
       </div>
-      <label class="f"><span>Priority</span><div class="seg" id="p">${["Low", "Normal", "High"].map((x, i) => `<button type="button" data-p="${i}" class="${i === 1 ? "on" : ""}">${x}</button>`).join("")}</div></label>
-      <label class="f"><span>Color</span><div class="colors" id="c">${PALETTE.map((c, i) => `<button type="button" data-c="${i}" class="${i === 0 ? "on" : ""}" style="background:#${c}" aria-label="${PALETTE_NAMES[i]}"></button>`).join("")}</div></label>
-      <label class="f" style="margin-bottom:0"><span>Notes</span><textarea id="n" maxlength="1000" placeholder="Optional details"></textarea></label>
-    </div>
+      <div class="f"><span class="hint" style="display:block;font-size:13px;color:var(--haze);margin:0 4px 5px">Priority</span>
+        <div class="seg" id="p">${["Low", "Normal", "High"].map((x, i) => `<button type="button" data-p="${i}" class="${i === 1 ? "on" : ""} ${i === 2 ? "high" : ""}">${x}</button>`).join("")}</div></div>
+      <div class="f" style="margin-top:14px"><span class="hint" style="display:block;font-size:13px;color:var(--haze);margin:0 4px 5px">Color</span>
+        <div class="colors" id="c">${PALETTE.map((c, i) => `<button type="button" data-c="${i}" class="${i === 0 ? "on" : ""}" style="background:#${c};color:#${c}" aria-label="${PALETTE_NAMES[i]}"></button>`).join("")}</div></div>
+      <label class="f" style="margin-top:14px"><span>Notes</span><textarea id="n" maxlength="1000" placeholder="Optional details"></textarea></label>
+    </section>
     <button class="btn primary local-submit" id="submit">Add reminder</button>
-    <div class="hint foot">It's sent to Calendar on your PC through the bot. If the PC is off, it's added when it starts (within 24 hours).</div>`;
+    <p class="foot">It goes to Calendar on your PC through the bot. If the PC is off, it's added when it starts (within 24 hours).</p>`;
 
   $("#ad").onchange = e => { form.allDay = e.target.checked; $("#tm").disabled = form.allDay; };
   $("#p").onclick = e => { const b = e.target.closest("[data-p]"); if (!b) return; form.priority = +b.dataset.p; $("#p").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); haptic("selection"); };
@@ -510,7 +624,7 @@ function renderForm() {
   $("#t").oninput = () => { $("#err").style.display = "none"; };
 
   if (tg && tg.MainButton && inTelegram) {
-    tg.MainButton.setText("Add reminder");
+    tg.MainButton.setParams({ text: "Add reminder", color: "#5CE1FF", text_color: "#070A1A" });
     tg.MainButton.onClick(submit);
     tg.MainButton.show();
   } else {
@@ -549,7 +663,7 @@ function toast(text) {
 if (tg) {
   tg.ready();
   tg.expand();
-  try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch {}
+  try { tg.setHeaderColor("#070A1A"); tg.setBackgroundColor("#070A1A"); tg.setBottomBarColor && tg.setBottomBarColor("#070A1A"); } catch {}
 }
 render();
 </script>
